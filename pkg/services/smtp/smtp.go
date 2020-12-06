@@ -3,6 +3,7 @@ package smtp
 import (
 	"crypto/tls"
 	"fmt"
+	"github.com/containrrr/shoutrrr/pkg/format"
 	"io"
 	"log"
 	"math/rand"
@@ -20,6 +21,7 @@ type Service struct {
 	standard.Templater
 	config            *Config
 	multipartBoundary string
+	propKeyResolver   format.PropKeyResolver
 }
 
 const (
@@ -40,9 +42,9 @@ func (service *Service) Initialize(configURL *url.URL, logger *log.Logger) error
 		UseHTML:     false,
 	}
 
-	service.config.BindKeys(service.config)
+	pkr := format.NewPropKeyResolver(service.config)
 
-	if err := service.config.SetURL(configURL); err != nil {
+	if err := service.config.setURL(&pkr, configURL); err != nil {
 		return err
 	}
 
@@ -54,6 +56,8 @@ func (service *Service) Initialize(configURL *url.URL, logger *log.Logger) error
 		}
 	}
 
+	service.propKeyResolver = pkr
+
 	return nil
 }
 
@@ -64,7 +68,8 @@ func (service *Service) Send(message string, params *types.Params) error {
 		return fail(FailGetSMTPClient, err)
 	}
 
-	if config, err := GetSendConfig(*service.config, params); err != nil {
+	config := service.config.Clone()
+	if err := service.propKeyResolver.UpdateConfigFromParams(&config, params); err != nil {
 		return fail(FailApplySendParams, err)
 	} else {
 		return service.doSend(client, message, &config)
